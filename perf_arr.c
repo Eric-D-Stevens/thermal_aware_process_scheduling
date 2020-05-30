@@ -10,9 +10,8 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 
-#define N 2 // number of hw events to monitor
-#define P 4 // number of processes to spin off
-#define L 10000000000 // nuber of silly iterations
+#define N 5 // number of hw events to monitor
+#define M 2 // number of hw events to monitor
 
 int global_sigchld_trip = 0; // catch end child
 void sighandler(int);
@@ -33,10 +32,9 @@ perf_event_open(struct perf_event_attr *hw_event, pid_t pid,
 // no function for seeing if we can monitor kernel events
 int no_function(int seconds)
 {
-    sleep(seconds);    
+    //sleep(seconds);    
     printf("\n\n Start stress \n\n");
-    system("stress -c 4 -t 10");
-
+    system("stress -d 4 -t 120");
     return 0;
 }
 
@@ -45,51 +43,78 @@ int no_function(int seconds)
 int
 main(int argc, char **argv){
 
+    FILE *temp, *freq, *output;
+    char temp_buff[10];
+    char freq_buff[20];
+
     signal(SIGCHLD, sighandler);
 
-	// ARRAY DECS
-	int num_events = N;
-	uint pe_arr[10] = {
+	int num_hw_events = N;
+	uint pe_hw[7] = {
                         PERF_COUNT_HW_CPU_CYCLES,
 	                    PERF_COUNT_HW_INSTRUCTIONS,
-	                    PERF_COUNT_HW_CACHE_REFERENCES,
 	                    PERF_COUNT_HW_CACHE_MISSES,
-                        PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
                         PERF_COUNT_HW_BRANCH_MISSES,
+                        PERF_COUNT_HW_BRANCH_INSTRUCTIONS,
+                        //----------------------------//
+	                    PERF_COUNT_HW_CACHE_REFERENCES,
                         PERF_COUNT_HW_BUS_CYCLES,
-                        //PERF_COUNT_HW_STALLED_CYCLES_FRONTEND,
-                        //PERF_COUNT_HW_STALLED_CYCLES_BACKEND,
-                        //PERF_COUNT_HW_REF_CPU_CYCLES
                     };
 	
-    char name_arr[10][50] = {
+    char hw_name_arr[7][50] = {
                             "PERF_COUNT_HW_CPU_CYCLES",
                             "PERF_COUNT_HW_INSTRUCTIONS",
-                            "PERF_COUNT_HW_CACHE_REFERENCES",
                             "PERF_COUNT_HW_CACHE_MISSES",
-                            "PERF_COUNT_HW_BRANCH_INSTRUCTIONS",
                             "PERF_COUNT_HW_BRANCH_MISSES",
+                            "PERF_COUNT_HW_BRANCH_INSTRUCTIONS",
+                            //---------------------------------//
+                            "PERF_COUNT_HW_CACHE_REFERENCES",
                             "PERF_COUNT_HW_BUS_CYCLES",
-                            "PERF_COUNT_HW_STALLED_CYCLES_FRONTEND",
-                            "PERF_COUNT_HW_STALLED_CYCLES_BACKEND",
-                            "PERF_COUNT_HW_REF_CPU_CYCLES"
                            };
-    
+                           
 
-	struct perf_event_attr pat_arr[N];
-	long long counts[N];
-	int fd_arr[N];
+    // cache events
+ 	int num_hw_cache_events = M;
+	uint pe_hw_cache[12] = {
+                    (PERF_COUNT_HW_CACHE_LL) | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
+                    (PERF_COUNT_HW_CACHE_LL) | (PERF_COUNT_HW_CACHE_OP_WRITE<< 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
+                    //----------------------------------------------------//
+                    (PERF_COUNT_HW_CACHE_L1D) | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16), // 
+                    (PERF_COUNT_HW_CACHE_L1I) | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
+                    (PERF_COUNT_HW_CACHE_BPU) | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
 
-	int x; //dummy
+                    (PERF_COUNT_HW_CACHE_L1D) | (PERF_COUNT_HW_CACHE_OP_WRITE<< 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16), // 
+                    (PERF_COUNT_HW_CACHE_BPU) | (PERF_COUNT_HW_CACHE_OP_WRITE<< 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
+                    };
+	
+    char hw_cache_name_arr[12][50] = {
+                    "PERF_COUNT_HW_CACHE_LL_read_miss",
+                    "PERF_COUNT_HW_CACHE_LL_write_miss",
+                    //-------------------------------//
+                    "PERF_COUNT_HW_CACHE_L1D_read_miss",
+                    "PERF_COUNT_HW_CACHE_L1I_read_miss",
+                    "PERF_COUNT_HW_CACHE_BPU_read_miss",
+
+                    "PERF_COUNT_HW_CACHE_L1D_write_miss",
+                    "PERF_COUNT_HW_CACHE_BPU_write_miss",
+                    };
 
 
-	for(int i=0; i<num_events; i++)
+	struct perf_event_attr pat_arr[num_hw_events+num_hw_cache_events];
+
+	long long counts[num_hw_events+num_hw_cache_events];
+	int fd_arr[num_hw_events+num_hw_cache_events];
+
+
+    // initialize hw events
+	for(int i=0; i<num_hw_events; i++)
 	{
 		memset(&pat_arr[i], 0, sizeof(struct perf_event_attr));
 		pat_arr[i].type = PERF_TYPE_HARDWARE;
 		pat_arr[i].size = sizeof(struct perf_event_attr);
-		pat_arr[i].config = pe_arr[i];
-		pat_arr[i].disabled = 1;
+		pat_arr[i].config = pe_hw[i];
+        if(i==0){pat_arr[i].disabled = 1;}
+        else{pat_arr[i].disabled = 0;}
 		pat_arr[i].exclude_kernel = 1;
 		pat_arr[i].exclude_hv = 1;
 		pat_arr[i].inherit = 1;
@@ -100,11 +125,35 @@ main(int argc, char **argv){
 			fprintf(stderr, "Error opening leader %llx\n", pat_arr[i].config);
 			exit(EXIT_FAILURE);
 		}
-		printf("FD%d: %d \t ITEM: %s\n",i,fd_arr[i], name_arr[i]);
+		printf("FD%d: %d \t ITEM: %s\n",i,fd_arr[i], hw_name_arr[i]);
 	}
 
+    // initialize hw cache events
+	for(int i=0; i<num_hw_cache_events; i++)
+	{
+		memset(&pat_arr[i+num_hw_events], 0, sizeof(struct perf_event_attr));
+		pat_arr[i+num_hw_events].type = PERF_TYPE_HW_CACHE;
+		pat_arr[i+num_hw_events].size = sizeof(struct perf_event_attr);
+		pat_arr[i+num_hw_events].config = pe_hw_cache[i];
+        if(i+num_hw_events==0){printf("dis=1");pat_arr[i+num_hw_events].disabled = 1;}
+        else{printf("dis=0");pat_arr[i+num_hw_events].disabled = 0;}
+		pat_arr[i+num_hw_events].exclude_kernel = 1;
+		pat_arr[i+num_hw_events].exclude_hv = 1;
+		pat_arr[i+num_hw_events].inherit = 1;
+
+		if(i+num_hw_events==0){fd_arr[i+num_hw_events] = perf_event_open(&pat_arr[i+num_hw_events],0,-1,-1,0);}
+		else{fd_arr[i+num_hw_events] = perf_event_open(&pat_arr[i+num_hw_events],0,-1,fd_arr[0],0);}
+		if (fd_arr[i+num_hw_events] == -1){
+            printf("\ni: %d\nnhe:%d\n",i,num_hw_events);
+			fprintf(stderr, "Error opening leader %llx\n", pat_arr[i+num_hw_events].config);
+			exit(EXIT_FAILURE);
+		}
+		printf("FD%d: %d \t ITEM: %s\n",i+num_hw_events,fd_arr[i+num_hw_events], hw_cache_name_arr[i]);
+	}
+
+
 	// reset and enable counters
-	for(int i=0; i<num_events; i++){
+	for(int i=0; i<num_hw_events+num_hw_cache_events; i++){
 		ioctl(fd_arr[i], PERF_EVENT_IOC_RESET,0);
 		ioctl(fd_arr[i], PERF_EVENT_IOC_ENABLE,0);
 	}
@@ -112,34 +161,79 @@ main(int argc, char **argv){
 /////////////////// ACTION ///////////////////////////
 
     /*-------- CHILD PROCESS BEING REDORDED -------*/
+    printf("\nSHOULD FORK RIGHTE HERE\n");
     pid_t proc = fork();
     if(proc==0){
         printf("entered child process\n");
-        int loop = L;
-        int no_sleep = 10;
-        x = no_function(no_sleep);
+        int no_sleep = 1;
+        no_function(no_sleep);
         //x = silly_events(loop);
         printf("exiting child process\n");
-        return x;
+        return 0;
     }
     /*-------- ACTION TAKEN DURRING REDORDING-------*/
     else{
+
+        // output file header
+        printf("\n\n\nWRITING HEADER\n\n\n");
+        output = fopen("output.txt","w+");
+        fprintf(output, "tempature,");
+        for(int i=0;i<num_hw_events;i++){
+            fprintf(output, hw_name_arr[i]);
+            if(i+1==num_hw_events+num_hw_cache_events){break;}
+            fprintf(output, ",");
+        }
+        for(int i=0;i<num_hw_cache_events;i++){
+            fprintf(output,hw_cache_name_arr[i]);
+            if(i+1==num_hw_cache_events){break;}
+            fprintf(output, ",");
+        }
+        fprintf(output,"\n");
+        fclose(output);
+        
+
         while(!global_sigchld_trip){
             sleep(1);
-            for(int i=0;i<num_events;i++){read(fd_arr[i], &counts[i], sizeof(long long));}
-            for(int i=0;i<num_events;i++){ioctl(fd_arr[i], PERF_EVENT_IOC_RESET,0);}
-            for(int i=0;i<num_events;i++){printf("%lld %s\t", counts[i], name_arr[i]);}
-            printf("\n");
-            x = 1;
+            temp = fopen("/sys/class/thermal/thermal_zone0/temp","r");
+            freq = fopen("/sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq","r");
+            for(int i=0;i<num_hw_events+num_hw_cache_events;i++){read(fd_arr[i], &counts[i], sizeof(long long));}
+            for(int i=0;i<num_hw_events+num_hw_cache_events;i++){ioctl(fd_arr[i], PERF_EVENT_IOC_RESET,0);}
+            fscanf(temp, "%s", temp_buff);
+            fscanf(freq, "%s", freq_buff);
+            printf("\nerror below here\n");
+            fclose(temp);
+            fclose(freq);
+            //fgets(buff, 255, (FILE*)fp);
+            for(int i=0;i<num_hw_events;i++){printf("%lld %s\t\n", counts[i], hw_name_arr[i]);}
+            printf("--------------------------------------\n");
+            for(int i=0;i<num_hw_cache_events;i++){printf("%lld %s\t\n", counts[i+num_hw_events], hw_cache_name_arr[i]);}
+            printf("--------------------------------------\n");
+            printf("temperature: %s\n", temp_buff);
+            printf("frequency: %s\n", freq_buff);
+            printf("\n\n");
+
+            // write out line
+            output = fopen("output.txt","a");
+            fprintf(output,"%s,",temp_buff);
+            for(int i=0; i<num_hw_events+num_hw_cache_events; i++){
+                fprintf(output, "%lld", counts[i]);
+                if(i+1==num_hw_events+num_hw_cache_events){break;}
+                fprintf(output, ",");
+            }
+            fprintf(output,"\n");
+            fclose(output);
+
         }
+
     }
 
 
-	for(int i=0;i<num_events;i++){ioctl(fd_arr[i], PERF_EVENT_IOC_DISABLE,0);}
-	for(int i=0;i<num_events;i++){read(fd_arr[i], &counts[i], sizeof(long long));}
-	for(int i=0;i<num_events;i++){printf("Used %lld %s\t", counts[i], name_arr[i]);}
-	for(int i=0;i<num_events;i++){close(fd_arr[i]);}
-	return x;
+	for(int i=0;i<num_hw_events+num_hw_cache_events;i++){ioctl(fd_arr[i], PERF_EVENT_IOC_DISABLE,0);}
+	for(int i=0;i<num_hw_events+num_hw_cache_events;i++){read(fd_arr[i], &counts[i], sizeof(long long));}
+	for(int i=0;i<num_hw_events;i++){printf("Used %lld %s\t", counts[i], hw_name_arr[i]);}
+	for(int i=0;i<num_hw_cache_events;i++){printf("Used %lld %s\t", counts[i+num_hw_events], hw_cache_name_arr[i]);}
+	for(int i=0;i<num_hw_events;i++){close(fd_arr[i]);}
+	return 0;
 }
 
 void sighandler(int signum) {
