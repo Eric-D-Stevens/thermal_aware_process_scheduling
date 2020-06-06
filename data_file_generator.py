@@ -7,7 +7,7 @@ def get_temp():
         return int(t.read())
 
 def gen_prc_nums():
-    l = [randint(0,6) for _ in range(4)]
+    l = [randint(0,5) for _ in range(4)]
     for num in l:
         if num > 0:
             return l
@@ -64,5 +64,6 @@ if __name__ == '__main__':
         start_time = time.time()
         os.system("./pa "+command)
         run_time = time.time()-start_time
+        print('\n\nRan: %s' % command)
         print("\n\nPYTHON SEES RUNTIME: %d\n" % run_time)
         cur_run += 1

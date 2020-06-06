@@ -280,7 +280,7 @@ int main(int argc, char *argv[]){
             // write out line
             output = fopen(out_filename,"a");
             fprintf(output,"%s,",temp_buff);
-            fprintf(output,"%ld,",time_delta);
+            fprintf(output,"%f,",time_delta);
             for(int i=0; i<num_hw_events+num_hw_cache_events; i++){
                 fprintf(output, "%lld", counts[i]);
                 if(i+1==num_hw_events+num_hw_cache_events){break;}
